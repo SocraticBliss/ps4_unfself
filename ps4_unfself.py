@@ -1,9 +1,15 @@
-# PS4 unfself
-# SocraticBliss (R)
-# Big Thanks to Znullptr and flatz <3
-# ... and zecoxao I guess
+#!/usr/bin/env python
+'''
+
+PS4 unfself by SocraticBliss (R)
+Big Thanks to Znullptr and flatz <3
+
+... Oh and I guess Zecoxao as well
+
+'''
 
 from binascii import hexlify as hx
+
 import struct
 import sys
 
@@ -14,17 +20,18 @@ def self_header(file):
     MAGIC, VERSION, MODE, ENDIAN, ATTRIBUTES = struct.unpack(FMT, file.read(struct.calcsize(FMT)))
     
     print('\n[SELF Header]')
-    print('Magic: 0x%s' % hx(MAGIC).upper())
+    print('Magic: 0x%s' % hx(MAGIC).upper().decode())
     print('Version: %d' % VERSION)
     print('Mode: 0x%X' % MODE)
     print('Endian: %d (%s)' % (ENDIAN, 'Little Endian' if ENDIAN == 1 else 'Unknown'))
     print('Attributes: 0x%X' % ATTRIBUTES)
     
     # KEY TYPE, HEADER SIZE, META SIZE, FILE SIZE, ENTRY COUNT, FLAG, 4x PADDING
-    EXTENDED_FMT = '<I2HQ2H4x'
-    KEY_TYPE, HEADER_SIZE, META_SIZE, FILE_SIZE, ENTRY_COUNT, FLAG = struct.unpack(EXTENDED_FMT, file.read(struct.calcsize(EXTENDED_FMT)))
+    EXTENDED_FMT = '<2B2x2HQ2H4x'
+    CONTENT_TYPE, KEY_TYPE, HEADER_SIZE, META_SIZE, FILE_SIZE, ENTRY_COUNT, FLAG = struct.unpack(EXTENDED_FMT, file.read(struct.calcsize(EXTENDED_FMT)))
     
     print('\n[SELF Extended Header]')
+    print('Content Type: 0x%X' % CONTENT_TYPE)
     print('Key Type: 0x%X' % KEY_TYPE)
     print('Header Size: 0x%X' % HEADER_SIZE)
     print('Meta Size: %d Bytes' % META_SIZE)
@@ -84,18 +91,18 @@ def elf_header(file, output):
     # 7F 45 4C 46
     # MAGIC, ARCHITECTURE, ENDIAN, VERSION, OS/ABI, ABI VERSION, 6x PADDING, NID SIZE
     FMT = '<4s5B6xB'
-    MAGIC, ARCHITECTURE, ENDIAN, VERSION, OS_ABI, ABI_VERSION, NID_SIZE = struct.unpack(FMT, file.read(struct.calcsize(FMT)))
+    MAGIC, ARCHITECTURE, ENDIAN, VERSION, OS_ABI, ABI_VERSION, EID_SIZE = struct.unpack(FMT, file.read(struct.calcsize(FMT)))
     
     print('\n[ELF Header]')
-    print('Magic: %s' % hx(MAGIC).upper())
+    print('Magic: 0x%s' % hx(MAGIC).upper().decode())
     print('Architecture: %d (%s)' % (ARCHITECTURE, 'ELF64' if ARCHITECTURE == 2 else 'Unknown'))
     print('Endian: %d (%s)' % (ENDIAN, 'Little Endian' if ENDIAN == 1 else 'Unknown'))
     print('Version: %d (%s)' % (VERSION, 'Current' if VERSION == 1 else 'None'))
     print('OS/ABI: %d (%s)' % (OS_ABI, 'FreeBSD' if OS_ABI == 9 else 'Unknown'))
     print('ABI Version: %d' % ABI_VERSION)
-    print('NID Size: %d' % NID_SIZE)
+    print('Size: %d' % EID_SIZE)
     
-    output.write(struct.pack(FMT, MAGIC, ARCHITECTURE, ENDIAN, VERSION, OS_ABI, ABI_VERSION, NID_SIZE))
+    output.write(struct.pack(FMT, MAGIC, ARCHITECTURE, ENDIAN, VERSION, OS_ABI, ABI_VERSION, EID_SIZE))
     
     # TYPE, MACHINE, VERSION, ENTRY POINT ADDRESS, PROGRAM HEADER OFFSET, SECTION HEADER OFFSET, FLAG, HEADER SIZE, PROGRAM HEADER SIZE, PROGRAM HEADER COUNT, SECTION HEADER SIZE, SECTION HEADER COUNT, SECTION HEADER STRING INDEX
     EX_FMT = '<2HI3QI6H'
@@ -245,8 +252,20 @@ def elf_section_header(section, file):
 
 def self_extended_information(file):
     # AUTHENTICATION ID, PROGRAM TYPE, APPLICATION VERSION, FIRMWARE VERSION, DIGEST
-    FMT = '<4Q32s'
+    FMT = '<8x4Q32s'
     AUTHENTICATION_ID, TYPE, APPLICATION_VERSION, FIRMWARE_VERSION, DIGEST = struct.unpack(FMT, file.read(struct.calcsize(FMT)))
+    
+    AUTHS = {
+    0x3C00000000000001 : 'HOST_KERNEL',
+    0x3E00000000000003 : 'PUP_MGR',
+    0x3E00000000000004 : 'MEME_MGR',
+    0x3E00000000000005 : 'AUTH_MGR',
+    0x3E00000000000006 : 'IDATA_MGR',
+    0x3E00000000000007 : 'MANUMODE_MGR',
+    0x3E00000000000008 : 'KEY_MGR',
+    0x3E00000000000009 : 'SM_MGR',
+    0x3F00000000000001 : 'SECURE_KERNEL'
+    }
     
     TYPES = {
     0x1: 'PT_FAKE',
@@ -260,11 +279,11 @@ def self_extended_information(file):
     }
     
     print('\n[SELF Extended Information]')
-    print('Authentication ID: 0x%X' % AUTHENTICATION_ID)
+    print('Authentication ID: 0x%X (%s)' % (AUTHENTICATION_ID, AUTHS.get(AUTHENTICATION_ID, 'Unknown')))
     print('Type: 0x%X (%s)' % (TYPE, TYPES.get(TYPE, 'Unknown')))
     print('Application Version: 0x%X' % APPLICATION_VERSION)
     print('Firmware Version: 0x%X' % FIRMWARE_VERSION)
-    print('Digest: %s' % hx(DIGEST).upper())
+    print('Digest: %s' % hx(DIGEST).upper().decode())
     
     if TYPE in {0x4, 0x5}:
         return True
@@ -283,12 +302,12 @@ def main(argc, argv):
             entries = []
             if entry_count > 0:
                 print('\nParsing PS4 SELF Entries...')
-                for entry in xrange(entry_count):
+                for entry in range(entry_count):
                     version = self_entry(entry, input, entries)
             
-            print('\nParsing SCE Version Information...')
             original = input.tell()
             
+            print('\nParsing SCE Version Information...')
             input.seek(version)
             entries.append(input.read())
             
@@ -299,19 +318,19 @@ def main(argc, argv):
             
             if program_header_count > 0:
                 print('\nParsing PS4 ELF Program Headers...')
-                for program in xrange(program_header_count):
+                for program in range(program_header_count):
                     elf_program_header(program, input, output, entries)
             
             if section_header_count > 0:
                 print('\nParsing PS4 ELF Section Headers...')
-                for section in xrange(section_header_count):
+                for section in range(section_header_count):
                     elf_section_header(section, input)
             
             print('\nParsing PS4 SELF Extended Information...')
             has_NPDRM = self_extended_information(input)
-                        
-            print('\nDone!')
             
+            print('\nDone!')
+        
     except:
         raise SystemExit('\nError: Unable to Parse PS4 SELF File!!!')
 
